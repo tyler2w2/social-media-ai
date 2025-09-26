@@ -1,5 +1,5 @@
 // Initialize Stripe
-const stripe = Stripe('pk_test_your_publishable_key'); // Replace with your publishable key
+const stripe = Stripe('pk_test_51SAC2IBmenfs7MHIFCNiAR9YXM8SqPgkedv4WTXZbCq32JaBC8OmvqQXOGHTUcsGxcrpRncmXRelLUYvBAbMTDLi00uKdukVrU'); // 
 
 // User Management System
 let currentUser = null;
@@ -9,19 +9,62 @@ let isGenerating = false;
 let dailyUsage = 0;
 let userMemory = [];
 
-// User tiers and limits (updated with Stripe integration)
+// User tiers and limits (updated with your actual Stripe Price IDs)
 const userTiers = {
     free: { dailyLimit: 3, name: 'Free', price: 0, stripePriceId: null },
-    creator: { dailyLimit: 5, name: 'Creator Pro', price: 7.99, stripePriceId: 'creator_monthly' },
-    business: { dailyLimit: 10, name: 'Business Elite', price: 12.99, stripePriceId: 'business_monthly' },
-    enterprise: { dailyLimit: Infinity, name: 'Enterprise', price: 37.99, stripePriceId: 'enterprise_monthly' }
+    creator: { dailyLimit: 5, name: 'Creator Pro', price: 7.99, stripePriceId: 'price_1SBgblBmenfs7MHIqiorQfuv' },
+    business: { dailyLimit: 10, name: 'Business Elite', price: 12.99, stripePriceId: 'price_1SBgeiBmenfs7MHIJPJc2JTA' },
+    enterprise: { dailyLimit: Infinity, name: 'Enterprise', price: 37.99, stripePriceId: 'price_1SBgfxBmenfs7MHIByBIavdM' }
 };
+
+// Payment integration functions
+async function processUpgrade(tier, isYearly = false) {
+    if (!isLoggedIn) {
+        showAuthModal();
+        return;
+    }
+
+    const tierInfo = userTiers[tier];
+    if (!tierInfo.stripePriceId) return;
+
+    try {
+        updateAIStatus('Processing payment...', true);
+        
+        const response = await fetch('/api/create-checkout', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                priceId: tierInfo.stripePriceId
+            }),
+        });
+
+        const { url } = await response.json();
+        
+        // Redirect to Stripe Checkout
+        window.location.href = url;
+        
+    } catch (error) {
+        console.error('Payment error:', error);
+        alert('Payment processing failed. Please try again.');
+        updateAIStatus('Ready', false);
+    }
+}
+
+function selectTier(tier, isYearly = false) {
+    const tierInfo = userTiers[tier];
+    const confirmMessage = `Subscribe to ${tierInfo.name} for $${tierInfo.price}/month with 7-day free trial?`;
+    
+    if (confirm(confirmMessage)) {
+        processUpgrade(tier, isYearly);
+    }
+}
 
 // Initialize the application
 function initializeApp() {
     checkAuthStatus();
     loadUserData();
-    initializePayments(); // Add payment initialization
     updateAIStatus('Initializing...', true);
     
     setTimeout(() => {
@@ -111,13 +154,6 @@ function updateUsageCounter() {
 
 // Authentication handlers
 function handleOAuth(provider) {
-    // In production, these would redirect to actual OAuth endpoints
-    const oauthUrls = {
-        google: 'https://accounts.google.com/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT&scope=email profile&response_type=code',
-        twitter: 'https://api.twitter.com/oauth/authenticate?oauth_token=YOUR_TOKEN',
-        github: 'https://github.com/login/oauth/authorize?client_id=YOUR_CLIENT_ID&scope=user:email'
-    };
-    
     // For demo, simulate successful OAuth
     simulateOAuthSuccess(provider);
 }
@@ -137,7 +173,6 @@ function simulateOAuthSuccess(provider) {
 
 function handleEmailAuth() {
     const email = document.getElementById('emailInput').value;
-    const authMode = document.getElementById('authTitle').textContent;
     
     if (!email) {
         alert('Please enter your email');
@@ -221,229 +256,15 @@ function incrementUsage() {
     updateUsageCounter();
 }
 
-// Payment integration functions
-async function processUpgrade(tier, isYearly = false) {
-    if (!isLoggedIn) {
-        showAuthModal();
-        return;
-    }
-
-    const tierInfo = userTiers[tier];
-    if (!tierInfo.stripePriceId) return;
-
-    const priceKey = isYearly ? `${tier}_yearly` : `${tier}_monthly`;
-    
-    try {
-        // Show loading state
-        updateAIStatus('Processing payment...', true);
-        
-        const response = await fetch('/api/create-checkout-session', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                price_lookup_key: priceKey,
-                customer_email: currentUser.email,
-                user_id: currentUser.id
-            }),
-        });
-
-        const { url } = await response.json();
-        
-        // Redirect to Stripe Checkout
-        window.location.href = url;
-        
-    } catch (error) {
-        console.error('Payment error:', error);
-        alert('Payment processing failed. Please try again.');
-        updateAIStatus('Ready', false);
-    }
-}
-
-async function openCustomerPortal() {
-    if (!currentUser?.stripe_customer_id) {
-        alert('No active subscription found.');
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/create-portal-session', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                customer_id: currentUser.stripe_customer_id
-            }),
-        });
-
-        const { url } = await response.json();
-        window.location.href = url;
-        
-    } catch (error) {
-        console.error('Portal error:', error);
-        alert('Unable to open billing portal. Please contact support.');
-    }
-}
-
-function selectTier(tier, isYearly = false) {
-    const tierInfo = userTiers[tier];
-    const price = isYearly ? (tierInfo.price * 10.5).toFixed(2) : tierInfo.price; // Yearly discount
-    const period = isYearly ? 'year' : 'month';
-    
-    const confirmMessage = `Subscribe to ${tierInfo.name} for $${price}/${period}?${isYearly ? ' (2 months free!)' : ''}`;
-    
-    if (confirm(confirmMessage)) {
-        processUpgrade(tier, isYearly);
-    }
-}
-
-// Check subscription status on page load
-async function checkSubscriptionStatus() {
-    if (!isLoggedIn) return;
-    
-    try {
-        const response = await fetch(`/api/user/${currentUser.id}/subscription`);
-        const subscriptionData = await response.json();
-        
-        if (subscriptionData.tier) {
-            currentUser.tier = subscriptionData.tier;
-            currentUser.subscription_status = subscriptionData.status;
-            currentUser.stripe_customer_id = subscriptionData.stripe_customer_id;
-            
-            updateUserDisplay();
-            updateUsageCounter();
-        }
-    } catch (error) {
-        console.log('Subscription check failed:', error);
-    }
-}
-
-// Handle successful payment redirect
-function handlePaymentSuccess() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get('session_id');
-    
-    if (sessionId) {
-        // Show success message
-        setTimeout(() => {
-            addMessage('🎉 Payment successful! Your subscription is now active. Welcome to premium features!', 'ai');
-            checkSubscriptionStatus(); // Refresh subscription status
-        }, 1000);
-        
-        // Clean URL
-        window.history.replaceState({}, document.title, window.location.pathname);
-    }
+function closeUpgradeModal() {
+    document.getElementById('upgradeModal').classList.add('hidden');
 }
 
 // Enhanced upgrade modal with real pricing
 function showUpgradeModal() {
     const modal = document.getElementById('upgradeModal');
-    const modalContent = modal.querySelector('.upgrade-container');
-    
-    modalContent.innerHTML = `
-        <button class="close-modal" onclick="closeUpgradeModal()">×</button>
-        <h2>Choose Your Plan</h2>
-        
-        <div style="text-align: center; margin-bottom: 20px;">
-            <label style="display: flex; align-items: center; justify-content: center; gap: 10px; color: #ccc;">
-                <input type="radio" name="billing" value="monthly" checked onchange="updatePricing()"> Monthly
-                <input type="radio" name="billing" value="yearly" onchange="updatePricing()"> Yearly (Save up to 22%)
-            </label>
-        </div>
-        
-        <div class="pricing-tiers">
-            <div class="pricing-tier" onclick="selectTierFromModal('creator')">
-                <div class="tier-name">Creator Pro</div>
-                <div class="tier-price" id="creator-price">$7.99<span class="period">/month</span></div>
-                <ul class="tier-features">
-                    <li>5 ideas per day</li>
-                    <li>Advanced analytics</li>
-                    <li>Standard templates</li>
-                    <li>Email support</li>
-                    <li>7-day free trial</li>
-                </ul>
-                <button class="upgrade-button">Start Free Trial</button>
-            </div>
-            
-            <div class="pricing-tier popular" onclick="selectTierFromModal('business')">
-                <div class="tier-name">Business Elite</div>
-                <div class="tier-price" id="business-price">$12.99<span class="period">/month</span></div>
-                <ul class="tier-features">
-                    <li>10 ideas per day</li>
-                    <li>Brand voice training</li>
-                    <li>Competitor analysis</li>
-                    <li>Priority support</li>
-                    <li>7-day free trial</li>
-                </ul>
-                <button class="upgrade-button">Start Free Trial</button>
-            </div>
-            
-            <div class="pricing-tier" onclick="selectTierFromModal('enterprise')">
-                <div class="tier-name">Enterprise</div>
-                <div class="tier-price" id="enterprise-price">$37.99<span class="period">/month</span></div>
-                <ul class="tier-features">
-                    <li>Unlimited ideas</li>
-                    <li>Team collaboration</li>
-                    <li>API access</li>
-                    <li>Dedicated manager</li>
-                    <li>7-day free trial</li>
-                </ul>
-                <button class="upgrade-button">Start Free Trial</button>
-            </div>
-        </div>
-        
-        <p style="text-align: center; color: #888; font-size: 0.8rem; margin-top: 16px;">
-            💳 Secure payment by Stripe • Cancel anytime • No hidden fees
-        </p>
-        
-        ${currentUser?.stripe_customer_id ? 
-            '<button onclick="openCustomerPortal()" style="width: 100%; margin-top: 16px; padding: 12px; background: #333; color: #fff; border: none; border-radius: 6px; cursor: pointer;">Manage Existing Subscription</button>' 
-            : ''}
-    `;
-    
     modal.classList.remove('hidden');
     toggleUserMenu();
-}
-
-function updatePricing() {
-    const billingType = document.querySelector('input[name="billing"]:checked').value;
-    const isYearly = billingType === 'yearly';
-    
-    const prices = {
-        creator: isYearly ? 6.99 * 12 : 7.99,
-        business: isYearly ? 10.99 * 12 : 12.99,
-        enterprise: isYearly ? 30.99 * 12 : 37.99
-    };
-    
-    Object.keys(prices).forEach(tier => {
-        const element = document.getElementById(`${tier}-price`);
-        if (element) {
-            const period = isYearly ? '/year' : '/month';
-            const savings = isYearly ? ' (2 months free!)' : '';
-            element.innerHTML = `$${prices[tier].toFixed(2)}<span class="period">${period}</span>${savings}`;
-        }
-    });
-}
-
-function selectTierFromModal(tier) {
-    const isYearly = document.querySelector('input[name="billing"]:checked').value === 'yearly';
-    closeUpgradeModal();
-    selectTier(tier, isYearly);
-}
-
-// Initialize payment system
-function initializePayments() {
-    // Check for payment success
-    handlePaymentSuccess();
-    
-    // Check subscription status
-    checkSubscriptionStatus();
-}
-
-function closeUpgradeModal() {
-    document.getElementById('upgradeModal').classList.add('hidden');
 }
 
 // Memory system
@@ -518,74 +339,6 @@ function updateAIStatus(status, active) {
     statusElement.classList.toggle('active', active);
 }
 
-// Web search functionality
-async function searchWebForTrends(query) {
-    // Simulate web search - in production, integrate with actual search API
-    const trendingTopics = [
-        'AI automation', 'sustainable living', 'remote work culture', 'mental wellness',
-        'creator economy', 'web3 adoption', 'digital minimalism', 'micro-learning',
-        'community building', 'authentic storytelling', 'vertical video', 'user-generated content'
-    ];
-    
-    // Randomize to simulate fresh data
-    return trendingTopics.sort(() => Math.random() - 0.5).slice(0, 8);
-}
-
-async function searchWebForContent(query, context) {
-    updateAIStatus('Searching web for content ideas...', true);
-    
-    // Simulate web search for content
-    return new Promise(resolve => {
-        setTimeout(() => {
-            const contentIdeas = generateContentFromSearch(query, context);
-            resolve(contentIdeas);
-        }, 2000);
-    });
-}
-
-function generateContentFromSearch(query, context) {
-    const ideas = [];
-    
-    // Generate content based on parsed intent
-    for (let i = 0; i < 6; i++) {
-        ideas.push({
-            title: generateTitle(context, i),
-            content: generateContent(context, i),
-            hashtags: generateHashtags(context, i),
-            type: context.contentType || 'post',
-            platform: context.platform || 'multi-platform',
-            engagement: `Est. ${Math.floor(Math.random() * 50 + 10)}K+ reach`,
-            source: 'web_research'
-        });
-    }
-    
-    return ideas;
-}
-
-function generateTitle(context, index) {
-    const titleTemplates = [
-        `${context.topic}: Strategic content framework`,
-        `${context.topic} dominance on ${context.platform || 'social platforms'}`,
-        `High-converting ${context.topic} strategies`,
-        `${context.topic}: Industry insights & tactics`,
-        `Executive guide to ${context.topic} for ${context.audience || 'target demographics'}`,
-        `${context.topic}: Performance-driven approach`
-    ];
-    return titleTemplates[index % titleTemplates.length];
-}
-
-function generateContent(context, index) {
-    const contentTemplates = [
-        `Market analysis reveals ${context.topic} drives measurable engagement for ${context.audience || 'target audiences'}.`,
-        `Strategic implementation of ${context.topic} increases conversion rates by up to 340% across platforms.`,
-        `Data indicates ${context.topic} content outperforms standard formats by significant margins.`,
-        `Professional analysis: ${context.topic} represents critical competitive advantage in 2025.`,
-        `Leading brands leverage ${context.topic} for authentic audience connection and retention.`,
-        `Performance metrics confirm ${context.topic} generates superior engagement compared to traditional approaches.`
-    ];
-    return contentTemplates[index % contentTemplates.length];
-}
-
 // Message handling
 async function sendMessage() {
     if (!isLoggedIn) {
@@ -619,7 +372,7 @@ async function sendMessage() {
         // Parse user intent
         const context = parseUserIntent(message);
         
-        // Simulate web search and content generation
+        // Simulate content generation
         const contentIdeas = await generateContentWithMemory(message, context);
         
         // Remove typing indicator
@@ -749,7 +502,7 @@ function parseUserIntent(message) {
         context.topic = topicMatches[1].trim();
     }
     
-    // Platform detection (simplified for space)
+    // Platform detection
     if (lowerMessage.includes('instagram') || lowerMessage.includes('ig')) context.platform = 'instagram';
     if (lowerMessage.includes('tiktok')) context.platform = 'tiktok';
     if (lowerMessage.includes('linkedin')) context.platform = 'linkedin';
